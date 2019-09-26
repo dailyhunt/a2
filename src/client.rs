@@ -133,6 +133,11 @@ impl Client {
     #[inline]
     pub fn send<'a>(&self, payload: Payload<'a>) -> FutureResponse {
         let request = self.build_request(payload);
+        if request.is_err() {
+            let error = request.unwrap_err();
+            return FutureResponse(Box::new(err(error)));
+        }
+        let request = request.unwrap();
         let path = format!("{}", request.uri());
 
         let send_request = self.http_client
@@ -224,10 +229,11 @@ impl Client {
         })
     }
 
-    fn build_request(&self, payload: Payload<'_>) -> hyper::Request<Body> {
+    fn build_request(&self, payload: Payload<'_>) -> Result<hyper::Request<Body>,Error> {
+        let device_token = payload.device_token;
         let path = format!(
             "https://{}/3/device/{}",
-            self.endpoint, payload.device_token
+            self.endpoint, device_token
         );
 
         let mut builder = hyper::Request::builder();
@@ -252,14 +258,21 @@ impl Client {
         if let Some(ref signer) = self.signer {
             signer.with_signature(|signature| {
                 builder.header(AUTHORIZATION, format!("Bearer {}", signature).as_bytes());
-            }).unwrap();
+            }).map_err(|e|Error::SignerError(e.to_string()))?;
         }
 
-        let payload_json = payload.to_json_string().unwrap();
+        let payload_json = payload.to_json_string().map_err(|e|{
+            log::error!("error while building json body for payload. error => {}.",e);
+            Error::SerializeError
+        })?;
+
         builder.header(CONTENT_LENGTH, format!("{}", payload_json.len()).as_bytes());
 
         let request_body = Body::from(payload_json);
-        builder.body(request_body).unwrap()
+        builder.body(request_body).map_err(|e|{
+            log::error!("error for device id {:?}  path => {:?}  while building request body. Error {:?}",device_token, path, e);
+            Error::RequestBodyError(e.to_string())
+        })
     }
 }
 

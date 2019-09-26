@@ -39,6 +39,8 @@ pub enum Error {
 
     /// Error reading the certificate or private key.
     ReadError(String),
+
+    RequestBodyError(String)
 }
 
 impl<'a> fmt::Display for Error {
@@ -63,6 +65,7 @@ impl<'a> StdError for Error {
             Error::TlsError(_) => "Error in creating a TLS connection",
             Error::ReadError(_) => "Error in reading a certificate file",
             Error::TimeoutError => "Timeout in sending a push notification",
+            Error::RequestBodyError(_) => "Error in preparing hyper request body "
         }
     }
 
